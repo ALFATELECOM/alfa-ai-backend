@@ -1,2 +1,4 @@
-# requirements.txt
-# Placeholder for requirements.txt
+fastapi
+uvicorn
+python-dotenv
+requests
