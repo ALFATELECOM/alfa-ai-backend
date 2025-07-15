@@ -1,22 +1,20 @@
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from app.routers import trade, funds, orders
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
 app = FastAPI()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-app.include_router(trade.router)
-app.include_router(funds.router)
-app.include_router(orders.router)
-
 @app.get("/")
-async def root():
-    return {"message": "ALFA AI Backend Live"}
+def root():
+    return {"status": "Backend running"}
+
+class LoginRequest(BaseModel):
+    api_key: str
+    api_secret: str
+    token: str
+
+@app.post("/login")
+def login(data: LoginRequest):
+    if data.api_key and data.api_secret and data.token:
+        return {"status": "success", "message": "Zerodha login simulated"}
+    raise HTTPException(status_code=400, detail="Invalid credentials")
