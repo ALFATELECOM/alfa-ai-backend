@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI
 from pydantic import BaseModel
 from datetime import datetime
@@ -15,13 +14,10 @@ class SignalResponse(BaseModel):
 
 @app.get("/get-signal", response_model=SignalResponse)
 def get_signal(symbol: str = "NIFTY"):
-    strategies = ["RSI", "MACD", "Breakout"]
-    actions = ["BUY", "SELL", "HOLD"]
     return SignalResponse(
         symbol=symbol,
-        strategy=random.choice(strategies),
-        action=random.choice(actions),
-        confidence=round(random.uniform(0.7, 0.99), 2),
+        strategy=random.choice(["RSI", "MACD", "Breakout"]),
+        action=random.choice(["BUY", "SELL"]),
+        confidence=round(random.uniform(0.7, 0.95), 2),
         timestamp=datetime.now().isoformat()
     )
-    
