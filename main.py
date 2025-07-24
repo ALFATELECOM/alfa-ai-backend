@@ -1,119 +1,26 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-import asyncio
-import logging
 import json
 from datetime import datetime
-from typing import List
-import uvicorn
+import asyncio
 import os
 
-app = FastAPI(title="ALFA Trading Backend")
+app = FastAPI()
 
-# CORS setup for your frontend
+# CORS for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://alfa-ai-trading-dashboard.vercel.app",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "*"  # Allow all for testing
-    ],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Simple WebSocket log handler
-class WebSocketLogHandler(logging.Handler):
-    def __init__(self):
-        super().__init__()
-        self.connections: List[WebSocket] = []
-    
-    def add_connection(self, websocket: WebSocket):
-        self.connections.append(websocket)
-    
-    def remove_connection(self, websocket: WebSocket):
-        if websocket in self.connections:
-            self.connections.remove(websocket)
-    
-    def emit(self, record):
-        if self.connections:
-            log_entry = {
-                "timestamp": datetime.now().isoformat(),
-                "level": record.levelname,
-                "message": self.format(record),
-                "module": record.module,
-                "function": record.funcName,
-                "line": record.lineno
-            }
-            
-            # Send to all connected WebSocket clients
-            for connection in self.connections.copy():
-                try:
-                    asyncio.create_task(
-                        connection.send_text(json.dumps(log_entry))
-                    )
-                except:
-                    self.remove_connection(connection)
+# Store WebSocket connections
+connections = []
 
-# Create global WebSocket handler
-websocket_handler = WebSocketLogHandler()
-
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-
-# Add WebSocket handler for real-time streaming
-websocket_handler.setFormatter(logging.Formatter('%(message)s'))
-
-# Get logger and add handlers
-logger = logging.getLogger("TradingApp")
-logger.addHandler(websocket_handler)
-logger.setLevel(logging.INFO)
-
-# WebSocket endpoint for log streaming
-@app.websocket("/ws/logs")
-async def websocket_logs(websocket: WebSocket):
-    await websocket.accept()
-    websocket_handler.add_connection(websocket)
-    
-    logger.info(f"🔌 New client connected to log stream")
-    
-    try:
-        # Send welcome message
-        await websocket.send_text(json.dumps({
-            "timestamp": datetime.now().isoformat(),
-            "level": "INFO",
-            "message": "🎉 Connected to ALFA Trading Backend Log Stream",
-            "module": "websocket",
-            "function": "connect",
-            "line": 0
-        }))
-        
-        # Keep connection alive
-        while True:
-            data = await websocket.receive_text()
-            if data == "ping":
-                await websocket.send_text(json.dumps({
-                    "timestamp": datetime.now().isoformat(),
-                    "level": "INFO",
-                    "message": "pong - Backend connection active",
-                    "module": "websocket",
-                    "function": "keepalive",
-                    "line": 0
-                }))
-                
-    except WebSocketDisconnect:
-        websocket_handler.remove_connection(websocket)
-        logger.info(f"🔌 Client disconnected from log stream")
-
-# Health check endpoint
 @app.get("/")
-async def health_check():
-    logger.info("🏥 Health check requested")
+async def root():
     return {
         "status": "healthy", 
         "service": "ALFA Trading Backend", 
@@ -121,87 +28,123 @@ async def health_check():
         "timestamp": datetime.now().isoformat()
     }
 
-# Status endpoint
 @app.get("/status")
-async def get_status():
-    active_connections = len(websocket_handler.connections)
-    logger.info(f"📊 Status check - {active_connections} active log connections")
+async def status():
     return {
         "status": "running",
-        "log_connections": active_connections,
+        "log_connections": len(connections),
         "timestamp": datetime.now().isoformat()
     }
 
-# Authentication endpoint
+@app.websocket("/ws/logs")
+async def websocket_logs(websocket: WebSocket):
+    await websocket.accept()
+    connections.append(websocket)
+    
+    # Send welcome message
+    welcome = {
+        "timestamp": datetime.now().isoformat(),
+        "level": "INFO",
+        "message": "🎉 Connected to ALFA Trading Backend",
+        "module": "websocket",
+        "function": "connect",
+        "line": 0
+    }
+    await websocket.send_text(json.dumps(welcome))
+    
+    try:
+        while True:
+            data = await websocket.receive_text()
+            if data == "ping":
+                pong = {
+                    "timestamp": datetime.now().isoformat(),
+                    "level": "INFO", 
+                    "message": "pong - Backend connection active",
+                    "module": "websocket",
+                    "function": "keepalive",
+                    "line": 0
+                }
+                await websocket.send_text(json.dumps(pong))
+    except WebSocketDisconnect:
+        connections.remove(websocket)
+
 @app.post("/auth/login")
 async def login(credentials: dict):
     email = credentials.get("email")
     password = credentials.get("password")
     
-    logger.info(f"🔐 Login attempt for user: {email}")
-    
-    # Demo authentication
-    demo_users = {
-        "demo@trading.com": "demo123",
-        "trader@example.com": "trader123"
+    # Broadcast login attempt to all connected clients
+    log_msg = {
+        "timestamp": datetime.now().isoformat(),
+        "level": "INFO",
+        "message": f"🔐 Login attempt for user: {email}",
+        "module": "auth",
+        "function": "login",
+        "line": 1
     }
+    await broadcast_log(log_msg)
     
-    if email in demo_users and password == demo_users[email]:
-        logger.info(f"✅ Successful login for: {email}")
+    # Demo auth
+    if email == "demo@trading.com" and password == "demo123":
+        success_msg = {
+            "timestamp": datetime.now().isoformat(),
+            "level": "INFO",
+            "message": f"✅ Successful login for: {email}",
+            "module": "auth", 
+            "function": "login",
+            "line": 2
+        }
+        await broadcast_log(success_msg)
+        
         return {
-            "success": True, 
-            "user": {
-                "email": email, 
-                "name": "Demo Trader"
-            }
+            "success": True,
+            "user": {"email": email, "name": "Demo Trader"}
         }
     else:
-        logger.warning(f"❌ Failed login attempt for: {email}")
-        return {
-            "success": False, 
-            "message": "Invalid credentials"
+        fail_msg = {
+            "timestamp": datetime.now().isoformat(),
+            "level": "WARNING",
+            "message": f"❌ Failed login attempt for: {email}",
+            "module": "auth",
+            "function": "login", 
+            "line": 3
         }
+        await broadcast_log(fail_msg)
+        
+        return {"success": False, "message": "Invalid credentials"}
 
-# Trading signals endpoint
-@app.get("/trade/signals")
-async def get_signals():
-    logger.info("📡 Fetching live trading signals")
-    
-    signals = [
-        {
-            "symbol": "RELIANCE",
-            "action": "BUY",
-            "price": 2485.50,
-            "confidence": 92,
-            "timestamp": datetime.now().isoformat()
-        },
-        {
-            "symbol": "TCS",
-            "action": "SELL",
-            "price": 3695.75,
-            "confidence": 88,
-            "timestamp": datetime.now().isoformat()
-        }
-    ]
-    
-    logger.info(f"📊 Generated {len(signals)} trading signals")
-    return {"signals": signals}
-
-# Order placement endpoint
 @app.post("/trade/order")
 async def place_order(order: dict):
-    symbol = order.get("symbol")
-    action = order.get("action")
+    symbol = order.get("symbol", "UNKNOWN")
+    action = order.get("action", "UNKNOWN")
     quantity = order.get("quantity", 1)
     price = order.get("price", 0)
     
-    logger.info(f"📋 New {action} order: {quantity} {symbol} @ ₹{price}")
+    # Broadcast order to all connected clients
+    order_msg = {
+        "timestamp": datetime.now().isoformat(),
+        "level": "INFO",
+        "message": f"📋 New {action} order: {quantity} {symbol} @ ₹{price}",
+        "module": "trading",
+        "function": "place_order",
+        "line": 1
+    }
+    await broadcast_log(order_msg)
     
-    # Simulate order processing
+    # Simulate processing
     await asyncio.sleep(1)
     
     order_id = f"ORD{datetime.now().strftime('%Y%m%d%H%M%S')}"
-    logger.info(f"✅ Order executed successfully - ID: {order_id}")
+    
+    success_msg = {
+        "timestamp": datetime.now().isoformat(),
+        "level": "INFO",
+        "message": f"✅ Order executed successfully - ID: {order_id}",
+        "module": "trading",
+        "function": "place_order",
+        "line": 2
+    }
+    await broadcast_log(success_msg)
     
     return {
         "success": True,
@@ -210,50 +153,54 @@ async def place_order(order: dict):
         "timestamp": datetime.now().isoformat()
     }
 
-# Portfolio endpoint
 @app.get("/trade/portfolio")
 async def get_portfolio():
-    logger.info("💼 Fetching portfolio data")
+    portfolio_msg = {
+        "timestamp": datetime.now().isoformat(),
+        "level": "INFO",
+        "message": "💼 Fetching portfolio data",
+        "module": "trading",
+        "function": "get_portfolio",
+        "line": 1
+    }
+    await broadcast_log(portfolio_msg)
     
     portfolio = {
         "total_value": 454870.02,
         "daily_pnl": 8750,
         "positions": [
-            {
-                "symbol": "RELIANCE", 
-                "quantity": 50, 
-                "avg_price": 2450.00, 
-                "current_price": 2485.50
-            },
-            {
-                "symbol": "TCS", 
-                "quantity": 25, 
-                "avg_price": 3680.00, 
-                "current_price": 3695.75
-            }
+            {"symbol": "RELIANCE", "quantity": 50, "avg_price": 2450.00, "current_price": 2485.50},
+            {"symbol": "TCS", "quantity": 25, "avg_price": 3680.00, "current_price": 3695.75}
         ]
     }
     
-    logger.info(f"💰 Portfolio value: ₹{portfolio['total_value']:,.2f}")
+    value_msg = {
+        "timestamp": datetime.now().isoformat(),
+        "level": "INFO",
+        "message": f"💰 Portfolio value: ₹{portfolio['total_value']:,.2f}",
+        "module": "trading",
+        "function": "get_portfolio", 
+        "line": 2
+    }
+    await broadcast_log(value_msg)
+    
     return portfolio
 
-# Error handling
-@app.exception_handler(Exception)
-async def global_exception_handler(request, exc):
-    logger.error(f"❌ Unhandled exception: {str(exc)}")
-    return {
-        "error": "Internal server error", 
-        "message": str(exc)
-    }
+async def broadcast_log(log_entry):
+    """Broadcast log to all connected WebSocket clients"""
+    if connections:
+        disconnected = []
+        for websocket in connections:
+            try:
+                await websocket.send_text(json.dumps(log_entry))
+            except:
+                disconnected.append(websocket)
+        
+        # Remove disconnected clients
+        for ws in disconnected:
+            if ws in connections:
+                connections.remove(ws)
 
 if __name__ == "__main__":
-    logger.info("🚀 Starting ALFA Trading Backend Server")
-    logger.info("📡 WebSocket log streaming enabled at /ws/logs")
-    logger.info("🌐 CORS configured for frontend")
-    
-    uvicorn.run(
-        app, 
-        host="0.0.0.0", 
-        port=int(os.environ.get("PORT", 10000)),
-        log_level="info"
-    )
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
