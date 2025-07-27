@@ -1,12 +1,11 @@
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-
-from trading import router as trading_router
-from auth import router as auth_router
+from pydantic import BaseModel
 
 app = FastAPI()
 
+# Enable CORS for all origins (for frontend connection)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -15,25 +14,38 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Models
+class OrderRequest(BaseModel):
+    symbol: str
+    signal: str
+    capital: float
+
 @app.get("/")
 def home():
     return {"status": "OK"}
 
 @app.get("/status")
-def status():
+def get_status():
     return {"status": "OK"}
 
 @app.get("/get-signal")
 def get_signal():
-    return {"signal": "BUY", "confidence": 0.85}
+    return {"strategy": "Momentum", "action": "BUY"}
 
 @app.get("/get-price")
 def get_price(symbol: str = Query(...)):
-    dummy_prices = {"WIPRO": 488.3, "HDFC": 1620.5}
-    if symbol.upper() in dummy_prices:
-        return {"symbol": symbol.upper(), "price": dummy_prices[symbol.upper()]}
+    prices = {
+        "WIPRO": 489.4,
+        "HDFC": 1621.2,
+        "RELIANCE": 2842.8
+    }
+    price = prices.get(symbol.upper(), None)
+    if price:
+        return {"symbol": symbol.upper(), "price": price}
     return JSONResponse(status_code=404, content={"error": "Symbol not found"})
 
-# Mount routers (if you use trading.py and auth.py)
-app.include_router(trading_router, prefix="/trade")
-app.include_router(auth_router, prefix="/auth")
+@app.post("/trade/order")
+async def place_order(order: OrderRequest):
+    # Log the received order for debug
+    print("Received Order:", order.dict())
+    return {"message": "Order Placed", "data": order.dict()}
