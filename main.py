@@ -23,3 +23,19 @@ def root():
 @app.get("/status")
 def status():
     return {"live": True}
+
+
+
+@app.get("/get-signal")
+def get_signal():
+    return {"strategy": "Momentum", "action": "BUY"}
+
+@app.get("/get-price")
+def get_price(symbol: str = Query(...)):
+    dummy_prices = {
+        "WIPRO": 492.5,
+        "RELIANCE": 2841.2,
+        "BANKNIFTY": 49720.0
+    }
+    price = dummy_prices.get(symbol.upper(), 0.0)
+    return {"symbol": symbol, "price": price}
