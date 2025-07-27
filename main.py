@@ -1,41 +1,34 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-from auth import router as auth_router
-from trading import router as trading_router
+from fastapi.responses import JSONResponse
 
 app = FastAPI()
 
+# Allow frontend access
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # For production, replace "*" with your frontend domain
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-app.include_router(auth_router, prefix="/auth")
-app.include_router(trading_router, prefix="/trade")
-
-@app.get("/")
-def root():
-    return {"status": "OK"}
-
 @app.get("/status")
-def status():
-    return {"live": True}
-
-
+def read_status():
+    return {"status": "OK"}
 
 @app.get("/get-signal")
 def get_signal():
-    return {"strategy": "Momentum", "action": "BUY"}
+    return {"signal": "BUY", "confidence": 0.82}
 
 @app.get("/get-price")
 def get_price(symbol: str = Query(...)):
     dummy_prices = {
-        "WIPRO": 492.5,
-        "RELIANCE": 2841.2,
-        "BANKNIFTY": 49720.0
+        "WIPRO": 488.3,
+        "HDFC": 1620.5,
+        "RELIANCE": 2840.0
     }
-    price = dummy_prices.get(symbol.upper(), 0.0)
-    return {"symbol": symbol, "price": price}
+    price = dummy_prices.get(symbol.upper(), None)
+    if price:
+        return {"symbol": symbol.upper(), "price": price}
+    return JSONResponse(status_code=404, content={"error": "Symbol not found"})
